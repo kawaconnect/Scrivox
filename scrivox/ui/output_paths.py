@@ -183,7 +183,12 @@ def explain_error(message):
     raw = (message or "").strip()
     low = raw.lower()
     if "ffmpeg" in low or "ffprobe" in low:
-        return "ffmpeg isn't installed, so Scrivox can't read audio or video.", FIX_FFMPEG
+        if "not found" in low:
+            return "ffmpeg isn't installed, so Scrivox can't read audio or video.", FIX_FFMPEG
+        # ffmpeg is there but gave up on this file (damaged, no audio, a
+        # track that doesn't exist): installing it again would not help
+        return ("ffmpeg couldn't read this file. It may be damaged or have no "
+                "usable audio or video."), None
     if "cuda" in low and ("not available" in low or "gpu" in low):
         return "No NVIDIA graphics card was found. Scrivox needs one to transcribe.", FIX_GPU
     if "hf_token" in low or "hugging" in low:
