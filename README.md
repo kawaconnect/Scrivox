@@ -210,7 +210,7 @@ Environment variables (in `.env` or the real environment):
 | Variable | Used by | Meaning |
 |----------|---------|---------|
 | `HF_TOKEN` | GUI, CLI | Hugging Face token for diarization |
-| `OPENROUTER_API_KEY` | GUI, CLI | API key for vision, summary and translation. Despite the name it is sent to whichever provider is selected. |
+| `OPENROUTER_API_KEY` | GUI, CLI | OpenRouter API key for vision, summary and translation. Used only when the provider is OpenRouter (the CLI default); it is never sent to another server. For other providers enter the key in the GUI or pass `--api-key`. |
 | `ANTHROPIC_API_KEY` | GUI only | Prefills the Anthropic key field. On the CLI use `--anthropic-key`. |
 | `SCRIVOX_USE_SYSTEM_CUDA` | Release builds | `1` uses the CUDA libraries installed on the PC instead of the bundled ones (same as **Tools > Settings > Advanced**). |
 
@@ -227,13 +227,23 @@ The CLI does not read `scrivox_config.json` unless you pass `--use-config`.
   with `--api-key`, `--anthropic-key` or `--hf-token` are visible to other
   processes of the same user and may end up in shell history; `.env` avoids
   that.
-- One API key field serves OpenRouter, OpenAI and Custom. If you switch the
-  provider, the saved key is sent to the new server, so clear it first if it
-  belongs to another service. Use an `https://` URL for any custom server
-  that is not on this PC.
-- Diarization models are PyTorch checkpoints, and loading one can run code
-  from it. Only use `--diarization-model` (or a `models\hub` folder) from a
-  source you trust; the default is the official pyannote model.
+- Each AI provider keeps its own saved key: switching the provider shows
+  (and sends) only the key saved for that provider. A key saved by an older
+  version, when one field served OpenRouter, OpenAI and Custom, is moved to
+  the provider that was selected at the time (OpenRouter if Anthropic was).
+  With `--use-config` the CLI likewise only uses the key saved for the server
+  it talks to. Use an `https://` URL for any custom server that is not on
+  this PC.
+- Diarization models are PyTorch checkpoints, and pyannote loads them in a
+  way that can run code from the file. The default model
+  (`pyannote/speaker-diarization-community-1`) is downloaded, and bundled in
+  Full, at a fixed commit (`DEFAULT_DIARIZATION_REVISION` in
+  `scrivox/core/constants.py`) and loaded with PyTorch's `weights_only`
+  mode, which only allows tensors and the three pyannote classes the
+  checkpoints contain. Any other model ID or folder (Settings > Advanced >
+  Speaker model, or `--diarization-model`) is loaded with code execution
+  allowed: Scrivox warns in the settings and in the log, and you should only
+  use models you trust.
 
 ## Troubleshooting
 
@@ -348,8 +358,10 @@ button to its recordings library - transcripts follow your Scrivox settings.
 ## Building from Source
 
 ```bash
-# Install build dependencies
-pip install pyinstaller
+# Install the exact, hash-checked versions the release builds use
+# (CUDA torch first; requirements.lock includes PyInstaller)
+pip install --require-hashes --no-deps -r requirements-torch-cu126.lock
+pip install --require-hashes -r requirements.lock
 
 # Build all three variants: Lite, Regular and Full (Full requires HF_TOKEN env var)
 python build.py --clean
@@ -367,8 +379,7 @@ python build.py --full
 
 ## Building / Releases (GitLab CI)
 
-Releases are built by GitLab CI (`.gitlab-ci.yml`); the GitHub Actions
-workflow is no longer used. Pipelines run for `v*` tags, when started by hand
+Releases are built by GitLab CI (`.gitlab-ci.yml`). Pipelines run for `v*` tags, when started by hand
 (web UI or API) and on merge requests, never on ordinary pushes. Merge request
 pipelines run the tests; the Windows builds are manual there and nothing is
 published.
@@ -376,7 +387,7 @@ published.
 | Stage | Job | Runner | What it does |
 |-------|-----|--------|--------------|
 | test | `test` | Linux (`python:3.11-bookworm`, Tk 8.6) | Unit and GUI tests under Xvfb with CPU-only torch. On release runs it also checks that `scrivox/__init__.py` has the release's version and that a `RELEASE_VERSION` run was started on that tag. |
-| build | `build-windows-lite`, `build-windows-regular`, `build-windows-full` | Windows laptop (PowerShell shell runner) | Python 3.11 + CUDA 12.6 torch, `build.py --clean --<variant>`, bundle checks, the portable `.7z` and the Inno Setup installer (`installer/windows.iss`). |
+| build | `build-windows-lite`, `build-windows-regular`, `build-windows-full` | Windows laptop (PowerShell shell runner) | Python 3.11, locked dependencies with CUDA 12.6 torch (see below), `build.py --clean --<variant>`, bundle checks, the portable `.7z` and the Inno Setup installer (`installer/windows.iss`). |
 | release | `release` | Linux | Creates or updates the GitLab Release for the tag, linking the uploaded files. |
 
 - **Windows toolchain:** `ci/tools-windows.ps1` installs Python 3.11.9 (NuGet
@@ -386,6 +397,21 @@ published.
   `ci/check_build.py` checks it: CUDA torch with its DLLs, `Scrivox.exe`,
   `.env.example`, Tk, no bundled `nvcuda.dll`, no pyannote in Lite, and the
   bundled models in Full.
+- **Locked dependencies:** the Windows jobs install only from hashed lock
+  files, with `pip install --require-hashes`: first
+  `requirements-torch-cu126.lock` (only torch and torchaudio, from the CUDA
+  12.6 index, installed with `--no-deps`), then `requirements.lock` (everything in `requirements.txt` plus
+  PyInstaller from `requirements-build.in` and torch's own dependencies,
+  without torch itself). The loose ranges
+  stay in `requirements.txt`, `requirements-build.in` and
+  `requirements-torch-cu126.in`; after changing one, regenerate the locks
+  with [uv](https://docs.astral.sh/uv/): `sh ci/update-locks.sh` (add
+  `--upgrade` to move every package to the newest allowed version). The
+  locks are universal for Python 3.11 (valid on Windows and Linux). Renovate
+  keeps them current through its `pip-compile` manager (`renovate.json`),
+  which reruns the command recorded in each lock's header. The Linux test
+  job still installs from `requirements.txt`, so it also catches breakage
+  from new versions inside the allowed ranges.
 - **One variant per job:** the laptop runs one job at a time, so the three
   variants build one after another. Each job may take up to 3 hours.
 - **Full needs `HF_TOKEN`:** the Full variant downloads the gated pyannote
@@ -403,7 +429,7 @@ published.
   only the `SHA256SUMS-*.txt` files.
 - **2 GiB limit:** GitLab releases are copied to GitHub by the release
   mirror, and GitHub rejects release assets of 2 GiB or more, so that is the
-  limit that counts. As in the old workflow, an installer at or over 2 GiB is
+  limit that counts. An installer at or over 2 GiB is
   not published: the job warns, moves it to `out\oversize\` and leaves it
   out of `SHA256SUMS-<variant>.txt`, and the variant ships only its `.7z`
   portable. A `.7z` at or over 2 GiB fails the job. Full is the variant most

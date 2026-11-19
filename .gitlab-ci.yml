@@ -25,18 +25,19 @@
 # Generic Package Registry (this instance sets no per-file limit there) and
 # the release job links them. The limit that binds is GitHub's 2 GiB per
 # release asset, because gitlab-release-mirror copies Scrivox releases to
-# GitHub: as in the old workflow, an installer of 2 GiB or more is left out
+# GitHub: an installer of 2 GiB or more is left out
 # of the release (the .7z portable still ships), and a .7z that size fails
 # its job. Untagged web/API runs build and check everything but keep only
 # the checksums.
 #
 # The Full variant downloads the gated pyannote diarization models, so its
 # job only exists when an HF_TOKEN CI/CD variable is available to the
-# pipeline (as the GitHub workflow's HF_TOKEN secret was). Without it the
-# pipeline builds Lite and Regular and the release has no Full variant.
+# pipeline. Without it the pipeline builds Lite and Regular and the release
+# has no Full variant.
 #
-# The GitHub Actions workflow (.github/workflows/release.yml) is left as it
-# was; Actions is disabled on the GitHub mirror.
+# The Windows jobs install from the hashed lock files (requirements.lock,
+# requirements-torch-cu126.lock; see ci/update-locks.sh). The Linux test
+# job installs from the loose requirements.txt.
 
 stages: [test, build, release]
 
@@ -128,8 +129,8 @@ test:
 
 # ───────────────────────────── Windows ─────────────────────────────
 
-# One job per variant (the old workflow built all three in one 180-minute
-# job). The laptop runs one job at a time, so they queue one after another.
+# One job per variant (all three in one job would take about 180 minutes).
+# The laptop runs one job at a time, so they queue one after another.
 .build-windows:
   extends: .windows
   stage: build
