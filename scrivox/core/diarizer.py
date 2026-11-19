@@ -1,5 +1,6 @@
 """Speaker diarization using pyannote.audio with bundled model support."""
 
+import logging
 import os
 import sys
 import threading
@@ -7,8 +8,26 @@ import time
 
 import torch
 
-from .torch_compat import _allow_unsafe_torch_load
+from .constants import (
+    CUSTOM_DIARIZATION_MODEL_WARNING, DEFAULT_DIARIZATION_MODEL,
+    DEFAULT_DIARIZATION_REVISION, LEGACY_DIARIZATION_MODELS,
+)
+from .torch_compat import pyannote_torch_load
 from .media import extract_wav
+
+log = logging.getLogger(__name__)
+
+
+def is_trusted_diarization_model(model_id):
+    """True for the default model, which is loaded at its pinned revision
+    with weights_only=True. Every other model ID or local folder is loaded
+    with pickle code execution allowed."""
+    return model_id == DEFAULT_DIARIZATION_MODEL
+
+
+def custom_model_warning(model_id):
+    """The warning shown and logged before a custom model is loaded."""
+    return f"WARNING: speaker model '{model_id}': {CUSTOM_DIARIZATION_MODEL_WARNING}"
 
 
 def _get_bundled_models_dir():
@@ -66,16 +85,24 @@ def _restore_hf_env(saved):
             os.environ[k] = v
 
 
-def _resolve_snapshot(model_id, hub_dir):
+def _resolve_snapshot(model_id, hub_dir, revision=None):
     """Resolve a HuggingFace model ID to its local snapshot directory.
 
-    Reads the refs/main file to get the commit hash, then returns the
-    full path to the snapshot directory containing the model files.
+    With a revision (a commit hash), returns that snapshot and fails if it
+    is not there. Without one, reads refs/main to get the commit hash.
     """
     if "/" not in model_id:
         raise ValueError(f"Invalid model ID (expected 'org/name'): {model_id}")
     org, name = model_id.split("/", 1)
     model_dir = os.path.join(hub_dir, f"models--{org}--{name.replace('/', '--')}")
+    if revision:
+        snapshot = os.path.join(model_dir, "snapshots", revision)
+        if not os.path.isdir(snapshot):
+            raise FileNotFoundError(
+                f"Bundled model '{model_id}' at revision {revision} not found in {hub_dir}\n"
+                f"Expected: {snapshot}\nReinstall Scrivox-Full to get the bundled models "
+                "this version expects.")
+        return snapshot
     refs_file = os.path.join(model_dir, "refs", "main")
     if not os.path.isfile(refs_file):
         raise FileNotFoundError(
@@ -96,7 +123,10 @@ def _load_bundled_pipeline(diarization_model, hub_dir, on_progress=print):
     """
     from pyannote.audio import Pipeline
 
-    pipeline_dir = _resolve_snapshot(diarization_model, hub_dir)
+    trusted = is_trusted_diarization_model(diarization_model)
+    pipeline_dir = _resolve_snapshot(
+        diarization_model, hub_dir,
+        revision=DEFAULT_DIARIZATION_REVISION if trusted else None)
     config_path = os.path.join(pipeline_dir, "config.yaml")
 
     if not os.path.isfile(config_path):
@@ -105,7 +135,7 @@ def _load_bundled_pipeline(diarization_model, hub_dir, on_progress=print):
             f"Expected bundled model: {diarization_model}")
 
     on_progress(f"  Loading bundled pipeline: {diarization_model}")
-    with _allow_unsafe_torch_load():
+    with pyannote_torch_load(trusted=trusted):
         pipeline = Pipeline.from_pretrained(pipeline_dir)
 
     return pipeline
@@ -119,13 +149,10 @@ def diarize_audio(audio_path, hf_token, num_speakers=None, min_speakers=None,
     If bundled models are found in a 'models/' directory next to the exe,
     they are loaded directly from disk, no HF token or network needed.
     """
-    from .constants import DEFAULT_DIARIZATION_MODEL
-
-    if not diarization_model:
-        diarization_model = DEFAULT_DIARIZATION_MODEL
+    diarization_model = (diarization_model or "").strip() or DEFAULT_DIARIZATION_MODEL
 
     # Auto-upgrade saved configs from pyannote 3.x model ID
-    if diarization_model == "pyannote/speaker-diarization-3.1":
+    if diarization_model in LEGACY_DIARIZATION_MODELS:
         diarization_model = DEFAULT_DIARIZATION_MODEL
         on_progress("Upgraded diarization model from 3.1 to community-1 (pyannote 4.0)")
 
@@ -161,6 +188,12 @@ def diarize_audio(audio_path, hf_token, num_speakers=None, min_speakers=None,
         else:
             on_progress("Downloading diarization models (first run only)...")
 
+        trusted = is_trusted_diarization_model(diarization_model)
+        if not trusted:
+            warning = custom_model_warning(diarization_model)
+            log.warning(warning)
+            on_progress(warning)
+
         on_progress(f"Loading {diarization_model} on CUDA...")
         if has_bundled:
             # Bundled models, resolve local paths and load directly from disk.
@@ -172,11 +205,19 @@ def diarize_audio(audio_path, hf_token, num_speakers=None, min_speakers=None,
             )
         else:
             # Download from HF Hub, needs token
+            # The default model is fetched at its pinned commit and loaded
+            # with weights_only=True; anything else as pyannote does it.
             from pyannote.audio import Pipeline
-            with _allow_unsafe_torch_load():
-                pipeline = Pipeline.from_pretrained(
-                    diarization_model, token=hf_token,
-                )
+            with pyannote_torch_load(trusted=trusted):
+                if trusted:
+                    pipeline = Pipeline.from_pretrained(
+                        diarization_model, revision=DEFAULT_DIARIZATION_REVISION,
+                        token=hf_token,
+                    )
+                else:
+                    pipeline = Pipeline.from_pretrained(
+                        diarization_model, token=hf_token,
+                    )
         pipeline.to(torch.device("cuda"))
 
         on_progress("Running diarization... (this may take several minutes)")

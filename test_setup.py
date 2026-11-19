@@ -19,7 +19,8 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 import torch
-from scrivox.core.torch_compat import _allow_unsafe_torch_load
+from scrivox.core.constants import DEFAULT_DIARIZATION_MODEL, DEFAULT_DIARIZATION_REVISION
+from scrivox.core.torch_compat import pyannote_torch_load
 
 
 def check(name, fn):
@@ -128,8 +129,10 @@ if hf_token:
     print("  Testing pyannote diarization pipeline...")
     try:
         from pyannote.audio import Pipeline
-        with _allow_unsafe_torch_load():
-            pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=hf_token)
+        with pyannote_torch_load(trusted=True):
+            pipeline = Pipeline.from_pretrained(DEFAULT_DIARIZATION_MODEL,
+                                                revision=DEFAULT_DIARIZATION_REVISION,
+                                                token=hf_token)
         pipeline.to(torch.device("cuda"))
         print(f"  [OK] Diarization pipeline loaded on GPU")
         del pipeline

@@ -2,7 +2,7 @@
 
   python ci/check_build.py torch
       Before PyInstaller: the installed torch must be a CUDA build that
-      carries its CUDA DLLs (same check as the old GitHub Actions workflow).
+      carries its CUDA DLLs.
 
   python ci/check_build.py dist <dist-dir> <lite|regular|full>
       After build.py: the onedir output must contain what the release
@@ -24,6 +24,18 @@ def _cuda_dlls(lib_dir):
     dlls = glob.glob(os.path.join(lib_dir, "*.dll"))
     return dlls, sorted(os.path.basename(d) for d in dlls
                         if any(k in os.path.basename(d).lower() for k in CUDA_KEYWORDS))
+
+
+def _pinned_diarization_model():
+    """DEFAULT_DIARIZATION_MODEL/_REVISION from scrivox/core/constants.py,
+    loaded on its own (importing scrivox.core would pull in torch)."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "scrivox", "core", "constants.py")
+    spec = importlib.util.spec_from_file_location("_scrivox_constants", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.DEFAULT_DIARIZATION_MODEL, module.DEFAULT_DIARIZATION_REVISION
 
 
 def check_torch():
@@ -115,6 +127,12 @@ def check_dist(dist, variant):
         hub = os.path.join(dist, "models", "hub")
         if not (os.path.isdir(hub) and any(e.startswith("models--") for e in os.listdir(hub))):
             errors.append("Full bundle is missing models/hub/models--* (bundled diarization models)")
+        else:
+            model_id, revision = _pinned_diarization_model()
+            config = os.path.join(hub, "models--" + model_id.replace("/", "--"),
+                                  "snapshots", revision, "config.yaml")
+            if not os.path.isfile(config):
+                errors.append(f"Full bundle lacks {model_id} at the pinned revision {revision}")
     elif os.path.isdir(os.path.join(dist, "models", "hub")):
         errors.append(f"{variant} bundle unexpectedly contains models/hub")
 

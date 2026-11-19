@@ -4,7 +4,9 @@ hardware. Shown on the "Advanced" tab of the Settings dialog."""
 import tkinter as tk
 from tkinter import ttk
 
-from ...core.constants import DEFAULT_DIARIZATION_MODEL
+from ...core.constants import (
+    CUSTOM_DIARIZATION_MODEL_WARNING, DEFAULT_DIARIZATION_MODEL, is_custom_diarization_model,
+)
 from ..theme import SP_L, SP_S, SP_XS, px
 from ..widgets import ToolTip, WrappingLabel
 
@@ -58,7 +60,13 @@ class ModelsFrame(ttk.Frame):
                 side=tk.RIGHT, fill=tk.X, expand=True, padx=(SP_S, 0))
             WrappingLabel(self, text="Hugging Face model ID or a local folder. "
                                      "Leave as is unless you know you need another.",
-                          style="Dim.TLabel", justify=tk.LEFT).pack(fill=tk.X, pady=(0, SP_L))
+                          style="Dim.TLabel", justify=tk.LEFT).pack(fill=tk.X, pady=(0, SP_XS))
+            # Shown only while a custom model is entered (see torch_compat).
+            self._model_warning = WrappingLabel(self, text="", style="SmallError.TLabel",
+                                                justify=tk.LEFT)
+            self._model_warning.pack(fill=tk.X, pady=(0, SP_L))
+            self.diarization_model_var.trace_add("write", self._update_model_warning)
+            self._update_model_warning()
 
         # ── Subtitle tuning ──
         ttk.Label(self, text="Subtitles (SRT/VTT)", style="Header.TLabel").pack(
@@ -142,6 +150,10 @@ class ModelsFrame(ttk.Frame):
                   self._confidence):
             w.state(["invalid"] if id(w) in bad else ["!invalid"])
         self._sub_error.configure(text=errors[0][0] if errors else "")
+
+    def _update_model_warning(self, *_):
+        custom = is_custom_diarization_model(self.diarization_model_var.get())
+        self._model_warning.configure(text=CUSTOM_DIARIZATION_MODEL_WARNING if custom else "")
 
     def get_diarization_model(self):
         return self.diarization_model_var.get().strip() or DEFAULT_DIARIZATION_MODEL
