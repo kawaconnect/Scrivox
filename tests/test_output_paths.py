@@ -110,6 +110,16 @@ class ExplainErrorTests(unittest.TestCase):
         self.assertIn("ffmpeg isn't installed", headline)
         self.assertEqual(fix, FIX_FFMPEG)
 
+    def test_ffmpeg_failure_is_not_missing_ffmpeg(self):
+        for message in (
+            "ffmpeg failed to extract audio track 3 from C:/x/a.mkv:\nStream map matches no streams.",
+            "ffmpeg timed out extracting audio from C:/x/a.mkv",
+            "Command '['C:/ffmpeg/bin/ffmpeg.exe', '-y']' returned non-zero exit status 1.",
+        ):
+            headline, fix = explain_error(message)
+            self.assertIn("couldn't read this file", headline)
+            self.assertIsNone(fix)
+
     def test_gpu(self):
         self.assertEqual(explain_error("CUDA GPU not available. This tool requires an NVIDIA GPU.")[1],
                          FIX_GPU)

@@ -110,12 +110,22 @@ class ConfigManager:
 
     def save(self):
         """Persist config to disk."""
+        # The file holds API keys: write a private temp file (0600 where the
+        # OS has file modes) and swap it in, so a crash mid-write can't leave
+        # a truncated config and other local users can't read the keys.
+        tmp_path = self._path + ".tmp"
         try:
             os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            with open(self._path, "w", encoding="utf-8") as f:
+            fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self._data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, self._path)
         except OSError:
-            pass  # silently fail if can't write
+            # silently fail if can't write
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def get(self, section, key, default=None):
         """Get a config value."""

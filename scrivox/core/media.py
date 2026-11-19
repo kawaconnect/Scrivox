@@ -16,6 +16,38 @@ def _subprocess_flags():
     return {}
 
 
+def find_tool(name):
+    """Absolute path of an external tool (ffmpeg, ffprobe), or None.
+
+    Looks next to Scrivox.exe (frozen builds), then in the PATH folders.
+    The current directory is never searched. With a bare name Windows would
+    look there before PATH, so an ffmpeg.exe lying next to a downloaded
+    video would be run instead of the installed one.
+    """
+    exe = name + ".exe" if sys.platform == "win32" else name
+    folders = []
+    if getattr(sys, "frozen", False):
+        folders.append(os.path.dirname(os.path.abspath(sys.executable)))
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        entry = entry.strip().strip('"')
+        # Empty and relative entries mean "the current directory"
+        if entry and os.path.isabs(entry):
+            folders.append(entry)
+    for folder in folders:
+        candidate = os.path.join(folder, exe)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _tool(name):
+    """find_tool() that raises FileNotFoundError like a failed launch would."""
+    path = find_tool(name)
+    if path is None:
+        raise FileNotFoundError(name)
+    return path
+
+
 def check_ffmpeg(on_progress=print):
     """Verify ffmpeg and ffprobe are available.
 
@@ -24,7 +56,7 @@ def check_ffmpeg(on_progress=print):
     for tool in ("ffmpeg", "ffprobe"):
         try:
             subprocess.run(
-                [tool, "-version"],
+                [_tool(tool), "-version"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5,
                 **_subprocess_flags(),
             )
@@ -45,10 +77,10 @@ def has_video_stream(file_path):
     """
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v",
+            [_tool("ffprobe"), "-v", "error", "-select_streams", "v",
              "-show_entries", "stream=codec_type",
              "-show_entries", "stream_disposition=attached_pic",
-             "-of", "json", file_path],
+             "-of", "json", "-i", file_path],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=10,
             **_subprocess_flags(),
@@ -66,8 +98,8 @@ def get_media_duration(file_path):
     """Get duration in seconds using ffprobe."""
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", file_path],
+            [_tool("ffprobe"), "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", "-i", file_path],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=10,
             **_subprocess_flags(),
@@ -84,11 +116,11 @@ def list_audio_tracks(file_path):
     """
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "a",
+            [_tool("ffprobe"), "-v", "error", "-select_streams", "a",
              "-show_entries", "stream=index,codec_name,channels,sample_rate",
              "-show_entries", "stream_tags=language,title",
              "-show_entries", "stream_disposition=default",
-             "-of", "json", file_path],
+             "-of", "json", "-i", file_path],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=15,
             **_subprocess_flags(),
@@ -127,7 +159,7 @@ def extract_wav(input_path, track_index=0, on_progress=print):
     on_progress(f"Extracting audio to WAV (track {track_index})...")
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", input_path,
+            [_tool("ffmpeg"), "-y", "-i", input_path,
              "-map", f"0:a:{track_index}",
              "-ac", "1", "-ar", "16000", "-vn", wav_path],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
@@ -135,10 +167,14 @@ def extract_wav(input_path, track_index=0, on_progress=print):
             timeout=600,
             **_subprocess_flags(),
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            FileNotFoundError) as e:
         if os.path.exists(wav_path):
             os.remove(wav_path)
         from .pipeline import PipelineError
+        if isinstance(e, FileNotFoundError):
+            raise PipelineError(
+                "'ffmpeg' not found. Install ffmpeg and ensure it's in your PATH.")
         if isinstance(e, subprocess.TimeoutExpired):
             raise PipelineError(f"ffmpeg timed out extracting audio from {input_path}")
         stderr_tail = "\n".join((e.stderr or "").strip().splitlines()[-5:])

@@ -232,6 +232,11 @@ class TranscriptionPipeline:
         is_local = cfg.api_base and any(h in cfg.api_base for h in ("localhost", "127.0.0.1", "0.0.0.0"))
         if (cfg.vision or cfg.summarize or cfg.translate) and not openrouter_key and not is_local:
             raise PipelineError("Vision/Summary/Translation requires an LLM API key in .env or config")
+        if ((cfg.vision or cfg.summarize or cfg.translate) and openrouter_key
+                and cfg.api_base and cfg.api_base.lower().startswith("http://")
+                and not is_local):
+            self.on_progress("Warning: the API server URL uses http://, so the API key and "
+                             "transcript are sent unencrypted. Use https:// if the server supports it.")
 
         # Anthropic's Messages API rejects OpenRouter-style model IDs, swap
         # any model still at its stock default for the Anthropic default.

@@ -4,6 +4,34 @@ All notable changes to Scrivox are listed here. Versions match the git tags
 (`vX.Y.Z`) and `scrivox.__version__`, which the window title, status bar and
 About dialog show.
 
+## [Unreleased]
+
+### Security
+- ffmpeg and ffprobe are now looked up next to `Scrivox.exe` and in the PATH
+  folders only. Windows searched the current directory first for a bare
+  `ffmpeg`, so an `ffmpeg.exe` sitting next to a downloaded video could be
+  run instead of the installed one.
+- `scrivox_config.json` (which holds the API keys) is written through a
+  temporary file and swapped in, so a crash while saving no longer leaves a
+  truncated file. On Linux and macOS it is created with mode 0600.
+- `test_setup.py` no longer prints the first characters of the Hugging Face
+  token and the OpenRouter key.
+- A warning is logged when an API key would be sent to a non-local
+  `http://` server.
+
+### Fixed
+- Input files whose relative name starts with `-` are no longer read as an
+  ffprobe option.
+- GUI: an ffmpeg failure on one file (damaged file, missing audio track,
+  timeout) no longer reports "ffmpeg isn't installed" with install help.
+
+### Changed
+- README: installer and portable install steps, CUDA torch for source
+  installs, configuration file locations and environment variables, security
+  notes, troubleshooting, dictation options; repository links point to the
+  `kawaconnect` organisation; the diarization terms link names the model
+  that is actually used.
+
 ## [1.8.4] - 2026-09-25
 
 ### Changed

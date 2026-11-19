@@ -59,10 +59,10 @@ def extract_keyframes(video_path, interval_secs=60, max_frames=0, change_thresho
     fps_expr = f"{1.0 / interval_secs:.6f}"
     on_progress(f"Extracting keyframes every {interval_secs}s from {duration:.0f}s video (fps={fps_expr})...")
 
-    from .media import _subprocess_flags
+    from .media import _subprocess_flags, _tool
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", video_path,
+            [_tool("ffmpeg"), "-y", "-i", video_path,
              "-vf", f"fps={fps_expr},scale=1280:-2",
              "-q:v", "3",
              os.path.join(tmpdir, "frame_%05d.jpg")],
@@ -70,7 +70,8 @@ def extract_keyframes(video_path, interval_secs=60, max_frames=0, change_thresho
             timeout=7200,
             **_subprocess_flags(),
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            FileNotFoundError):
         # Caller never receives tmpdir on failure, clean it up here or the
         # partially-extracted frames leak in %TEMP%
         import shutil

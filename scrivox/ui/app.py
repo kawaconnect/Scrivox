@@ -19,7 +19,6 @@ import functools
 import os
 import queue
 import re
-import shutil
 import sys
 import threading
 import time
@@ -41,6 +40,7 @@ from .. import __version__, __app_name__
 from ..config import ConfigManager
 from ..core.constants import OUTPUT_FORMATS
 from ..core.features import has_diarization, get_variant_name
+from ..core.media import find_tool
 from ..core.pipeline import (
     PipelineConfig, PipelineCancelled, PipelineError, TranscriptionPipeline,
 )
@@ -681,7 +681,7 @@ class ScrivoxApp(_RootBase):
                 parts.append(f"GPU: unavailable ({type(e).__name__})")
                 issues.append(FIX_GPU)
 
-            missing = [tool for tool in ("ffmpeg", "ffprobe") if not shutil.which(tool)]
+            missing = [tool for tool in ("ffmpeg", "ffprobe") if not find_tool(tool)]
             if missing:
                 parts.append("ffmpeg: not installed")
                 issues.insert(0, FIX_FFMPEG)
