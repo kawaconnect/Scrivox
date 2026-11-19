@@ -79,7 +79,7 @@ hf_token = os.environ.get("HF_TOKEN")
 openrouter_key = os.environ.get("OPENROUTER_API_KEY")
 
 if hf_token:
-    print(f"  [OK] HF_TOKEN: set ({hf_token[:8]}...)")
+    print("  [OK] HF_TOKEN: set")
 else:
     try:
         try:
@@ -89,7 +89,7 @@ else:
             get_token = HfFolder.get_token
         token = get_token()
         if token:
-            print(f"  [OK] HF_TOKEN: cached via huggingface-cli ({token[:8]}...)")
+            print("  [OK] HF_TOKEN: cached via huggingface-cli")
             hf_token = token
         else:
             print(f"  [WARN] HF_TOKEN: not set (diarization will not work)")
@@ -97,7 +97,7 @@ else:
         print(f"  [WARN] HF_TOKEN: not set (diarization will not work)")
 
 if openrouter_key:
-    print(f"  [OK] OPENROUTER_API_KEY: set ({openrouter_key[:12]}...)")
+    print("  [OK] OPENROUTER_API_KEY: set")
 else:
     print(f"  [WARN] OPENROUTER_API_KEY: not set (vision/summary will not work)")
 
