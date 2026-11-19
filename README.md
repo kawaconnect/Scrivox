@@ -21,7 +21,7 @@ GPU-accelerated transcription suite with speaker diarization, LLM translation, S
 - **Multi-Track Audio**: select specific audio tracks from multi-track video files
 - **Batch Processing**: queue multiple files with drag-and-drop
 - **Smart Caching**: transcription and diarization results cached per-file; cache auto-invalidates when model, language, or diarization params change
-- **Portable Config**: JSON config stored next to the executable
+- **Portable Config**: JSON config stored next to the executable (or in `%APPDATA%\Scrivox` when that folder is read-only, as after the installer)
 
 ## Quick Start
 
@@ -91,37 +91,69 @@ python main.py video.mp4 --all -f json -o report.json
 
 ### Dictation (Real-Time)
 
+Source only (not part of the release builds):
+
 ```bash
-python dictate.py
+python dictate.py                 # or dictate.bat
 # Hold Ctrl+Shift to record, release to transcribe and type
 # Ctrl+Shift+Q to quit
+
+python dictate.py --list-devices  # microphones and their IDs
+python dictate.py --device-id 3 --model small --language en
+python dictate.py --copy-mode     # copy to the clipboard instead of typing
+python dictate.py --hotkey ctrl+alt
 ```
+
+The text is typed into whichever window has focus when you release the hotkey.
 
 ## Installation
 
 ### From Release (Recommended)
 
-1. Download the latest release from [Releases](https://github.com/Deenyoro/Scrivox/releases)
-2. Extract the `.7z` archive
-3. Copy `.env.example` to `.env` and add your API keys
-4. Run `Scrivox.exe`
+Download the latest release from [Releases](https://github.com/kawaconnect/Scrivox/releases).
+Each variant comes as an installer and as a portable archive:
+
+- **Installer** (`Scrivox*-win64-setup.exe`): installs to Program Files, adds
+  Start menu shortcuts and an uninstaller. Enter API keys in the app under
+  **Tools > Settings > AI services**.
+- **Portable** (`Scrivox*-win64.7z`): extract anywhere with [7-Zip](https://www.7-zip.org/)
+  and run `Scrivox.exe`. Keys can go in the app or in a `.env` file next to
+  `Scrivox.exe` (copy `.env.example`).
+
+A variant whose installer would be 2 GiB or larger ships only the `.7z`.
+Each release has `SHA256SUMS-Scrivox*.txt` files to check the downloads
+against (`Get-FileHash <file>` in PowerShell). The builds are not code signed,
+so Windows SmartScreen may ask for confirmation on first run.
 
 Three variants are available:
 
 | Variant | Size | Description |
 |---------|------|-------------|
-| **Scrivox-Lite** | ~200-300 MB | Transcription only, no diarization |
-| **Scrivox-Regular** | ~500-800 MB | All features, provide your own HuggingFace token |
+| **Scrivox-Lite** | ~200-300 MB | Transcription only: no diarization, vision, summary or translation |
+| **Scrivox** (Regular) | ~500-800 MB | All features; diarization models download on first use with your own HuggingFace token |
 | **Scrivox-Full** | ~1.5-2 GB | All features with diarization models pre-bundled |
+
+ffmpeg is not bundled: install it separately (see [Requirements](#requirements)).
+The first run with a Whisper model downloads it from Hugging Face (75 MB for
+`tiny` up to about 3 GB for `large-v3`) into the Hugging Face cache in your
+user profile.
 
 ### From Source
 
+Python 3.11 is what the releases are built and tested with. Install the CUDA
+build of PyTorch first; a plain `pip install -r requirements.txt` would pull
+the CPU-only build, and Scrivox would then report that no GPU was found.
+
 ```bash
-git clone https://github.com/Deenyoro/Scrivox.git
+git clone https://github.com/kawaconnect/Scrivox.git
 cd Scrivox
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
 pip install -r requirements.txt
 python main.py
 ```
+
+Linux works from source for the CLI and GUI with an NVIDIA GPU; the releases
+and the dictation tool are Windows only.
 
 ### Custom Models
 
@@ -139,8 +171,15 @@ Scrivox/
 ## Requirements
 
 - **Windows 10/11** (64-bit)
-- **NVIDIA GPU** with CUDA support
-- **ffmpeg** in PATH ([download](https://ffmpeg.org/download.html))
+- **NVIDIA GPU** with CUDA support and a current driver. There is no CPU
+  mode. The release builds bundle the CUDA libraries, so no CUDA toolkit
+  install is needed.
+- **ffmpeg and ffprobe** in PATH: `winget install --id Gyan.FFmpeg -e`, or a
+  [manual download](https://ffmpeg.org/download.html). Scrivox also accepts
+  `ffmpeg.exe` and `ffprobe.exe` placed next to `Scrivox.exe`. It does not
+  run an ffmpeg found in the current directory.
+- Internet access for the first-run model downloads and for the optional AI
+  features (vision, summary, translation). Transcription itself runs locally.
 
 ## API Keys
 
@@ -154,7 +193,60 @@ Add to `.env` file or enter them in the GUI under **Tools > Settings > AI servic
 > **Note:** The Full variant has diarization models bundled, no HuggingFace token needed.
 > Vision, summary, and translation features work with any OpenAI-compatible API provider or Anthropic.
 
-For diarization with the Lite variant, you must also accept the model license at [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1).
+For diarization with the Regular variant (or from source), you must also accept the model terms at [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) with the account the token belongs to. The Lite variant has no diarization.
+
+## Configuration
+
+| What | Where |
+|------|-------|
+| GUI settings and API keys | `scrivox_config.json` next to `Scrivox.exe` (portable) or the repo root (from source). If that folder is not writable, as in an installed copy under Program Files, `%APPDATA%\Scrivox\scrivox_config.json`. The **AI services** settings tab shows the exact path. |
+| `.env` | Next to `Scrivox.exe` or in the repo root. Read by the GUI and the CLI. |
+| Error log | `scrivox_error.log` in the same folder as `scrivox_config.json` |
+| Transcription cache | `<input file>.whisper_cache.json` next to each input file. Delete it or pass `--clear-cache` to transcribe again. |
+| Whisper models | The Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), or `models\whisper\<name>` next to `Scrivox.exe` if you supply your own |
+
+Environment variables (in `.env` or the real environment):
+
+| Variable | Used by | Meaning |
+|----------|---------|---------|
+| `HF_TOKEN` | GUI, CLI | Hugging Face token for diarization |
+| `OPENROUTER_API_KEY` | GUI, CLI | API key for vision, summary and translation. Despite the name it is sent to whichever provider is selected. |
+| `ANTHROPIC_API_KEY` | GUI only | Prefills the Anthropic key field. On the CLI use `--anthropic-key`. |
+| `SCRIVOX_USE_SYSTEM_CUDA` | Release builds | `1` uses the CUDA libraries installed on the PC instead of the bundled ones (same as **Tools > Settings > Advanced**). |
+
+The CLI does not read `scrivox_config.json` unless you pass `--use-config`.
+
+## Security and privacy
+
+- Transcription and diarization run on your PC. Vision, summary and
+  translation send keyframes and transcript text to the AI provider you
+  selected.
+- API keys are stored unencrypted in `scrivox_config.json` and `.env`. Keep
+  the Scrivox folder out of shared or synced locations, and prefer the
+  installer (config under your own `%APPDATA%`) on a shared PC. Keys passed
+  with `--api-key`, `--anthropic-key` or `--hf-token` are visible to other
+  processes of the same user and may end up in shell history; `.env` avoids
+  that.
+- One API key field serves OpenRouter, OpenAI and Custom. If you switch the
+  provider, the saved key is sent to the new server, so clear it first if it
+  belongs to another service. Use an `https://` URL for any custom server
+  that is not on this PC.
+- Diarization models are PyTorch checkpoints, and loading one can run code
+  from it. Only use `--diarization-model` (or a `models\hub` folder) from a
+  source you trust; the default is the official pyannote model.
+
+## Troubleshooting
+
+| Problem | What to do |
+|---------|------------|
+| "ffmpeg isn't installed" / `'ffmpeg' not found` | Install ffmpeg (see Requirements). In the GUI click **How to fix**, then **Check again**. A terminal opened before the install has the old PATH: open a new one. |
+| "No NVIDIA graphics card found" / `CUDA GPU not available` | Update the NVIDIA driver. On a laptop, plug in the charger and set Scrivox to "High performance" in Windows graphics settings. From source, check that the CUDA build of torch is installed: `python -c "import torch; print(torch.cuda.is_available())"`. |
+| Diarization fails with 401/403 or "gated" | The token is wrong, or the account has not accepted the pyannote model terms (see API Keys). Use **Test keys** in the settings. |
+| "The graphics card ran out of memory" | Pick a smaller model (`large-v3-turbo`, `medium`, `small`) and close other GPU-heavy programs. |
+| The first run seems stuck | It is downloading the Whisper model (up to about 3 GB). The GUI shows the progress; the CLI shows little until it finishes. |
+| An old result comes back after changing something | Pass `--clear-cache` or delete `<input>.whisper_cache.json`. |
+| CLI prints nothing from `Scrivox.exe` | Run it from an existing cmd or PowerShell window; the exe has no console of its own. |
+| Something else | The **Log** tab has the details; unexpected errors are also written to `scrivox_error.log`. |
 
 ## LLM Providers
 
@@ -218,6 +310,7 @@ API & Credentials:
   --api-base URL             LLM API endpoint (default: OpenRouter)
   --api-key KEY              LLM API key for vision/summary/translation
   --anthropic-key KEY        Anthropic API key (auto-sets Anthropic base URL)
+  --openrouter-key KEY       Older name for --api-key
   --hf-token TOKEN           HuggingFace token for diarization
 
 Audio Tracks:
@@ -248,7 +341,7 @@ python main.py meeting.mp4 --use-config --format srt   # one override on top
 
 Settings saved in the GUI that this build can't do (e.g. diarization on Lite)
 are skipped with a notice instead of failing the run. This is also the hook
-other apps use to drive Scrivox: [SimpleReliableRecorder](https://github.com/Deenyoro/SimpleReliableRecorder)
+other apps use to drive Scrivox: [SimpleReliableRecorder](https://github.com/kawaconnect/SimpleReliableRecorder)
 auto-detects a Scrivox install next to it and adds a "Transcribe with Scrivox"
 button to its recordings library - transcripts follow your Scrivox settings.
 
@@ -275,8 +368,10 @@ python build.py --full
 ## Building / Releases (GitLab CI)
 
 Releases are built by GitLab CI (`.gitlab-ci.yml`); the GitHub Actions
-workflow is no longer used. Pipelines run only for `v*` tags and when started
-by hand (web UI or API), never on ordinary pushes.
+workflow is no longer used. Pipelines run for `v*` tags, when started by hand
+(web UI or API) and on merge requests, never on ordinary pushes. Merge request
+pipelines run the tests; the Windows builds are manual there and nothing is
+published.
 
 | Stage | Job | Runner | What it does |
 |-------|-----|--------|--------------|
@@ -341,7 +436,10 @@ python -m unittest discover -s tests
 python -c "import tkinter; print(tkinter.TkVersion)"   # expect 8.6
 xvfb-run -a python -m unittest discover -s tests
 
-# Environment check: CUDA, ffmpeg, audio devices, cached models
+# Environment check: CUDA, ffmpeg, audio devices, keys. Not offline: it
+# downloads the large-v3 model (about 3 GB) if it is not cached, loads the
+# diarization model when HF_TOKEN is set and calls the OpenRouter models API
+# when OPENROUTER_API_KEY is set.
 python test_setup.py
 ```
 
