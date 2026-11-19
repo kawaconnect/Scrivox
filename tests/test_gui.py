@@ -646,7 +646,7 @@ class FixDialogTests(GuiTestCase):
         self.make_app()
         results = []
         with mock.patch.object(appmod.winnative, "refresh_path") as refresh, \
-                mock.patch.object(appmod.shutil, "which", return_value="/usr/bin/ffmpeg"):
+                mock.patch.object(appmod, "find_tool", return_value="/usr/bin/ffmpeg"):
             self._real_preflight(on_done=results.append)
             self.assertTrue(self.pump(10, until=lambda: bool(results)))
         refresh.assert_called_once()
@@ -657,7 +657,7 @@ class FixDialogTests(GuiTestCase):
         import scrivox.ui.app as appmod
         self.make_app()
         with mock.patch.object(appmod.winnative, "refresh_path") as refresh, \
-                mock.patch.object(appmod.shutil, "which", return_value="/usr/bin/ffmpeg"):
+                mock.patch.object(appmod, "find_tool", return_value="/usr/bin/ffmpeg"):
             self._real_preflight()
             self.assertTrue(self.pump(10, until=lambda: not str(
                 self.app._status_bar.cget("text")).startswith("Checking")))
