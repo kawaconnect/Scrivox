@@ -18,6 +18,25 @@ About dialog show.
   token and the OpenRouter key.
 - A warning is logged when an API key would be sent to a non-local
   `http://` server.
+- The default diarization model (`pyannote/speaker-diarization-community-1`)
+  is downloaded and bundled at a fixed Hugging Face commit, and loaded with
+  PyTorch's `weights_only` mode limited to the three pyannote classes its
+  checkpoints contain, so a changed or tampered checkpoint cannot run code.
+  Before, every model was loaded with code execution allowed. Custom model
+  IDs or folders still are, and Scrivox now says so in Settings > Advanced,
+  in the log and in `--help`.
+- Each AI provider (OpenRouter, OpenAI, Ollama, Custom) keeps its own saved
+  API key, so switching the provider no longer sends one provider's key to
+  another provider's server. The single key saved by earlier versions moves
+  to the provider selected at the time (OpenRouter if Anthropic was
+  selected). `--use-config` only uses the key saved for the server the run
+  talks to, and `OPENROUTER_API_KEY` from `.env` is only sent to OpenRouter.
+- Anthropic and OpenAI endpoints are recognised by the URL's hostname, not by
+  "anthropic.com" or "api.openai.com" appearing anywhere in the URL.
+- Windows release builds install exact, hash-checked dependency versions from
+  `requirements.lock` and `requirements-torch-cu126.lock` instead of the
+  open ranges in `requirements.txt`. `ci/update-locks.sh` regenerates them;
+  Renovate keeps them current (`renovate.json`).
 
 ### Fixed
 - Input files whose relative name starts with `-` are no longer read as an
@@ -26,6 +45,8 @@ About dialog show.
   timeout) no longer reports "ffmpeg isn't installed" with install help.
 
 ### Changed
+- Removed the unused GitHub Actions workflow (`.github/`); releases are built
+  by GitLab CI only.
 - README: installer and portable install steps, CUDA torch for source
   installs, configuration file locations and environment variables, security
   notes, troubleshooting, dictation options; repository links point to the

@@ -36,8 +36,14 @@ CONFIG_FILENAME = "scrivox_config.json"
 _DEFAULT_CONFIG = {
     "credentials": {
         "hf_token": "",
+        # Legacy single key for every OpenAI-compatible provider; moved into
+        # provider_keys on load (see _migrate_provider_keys) and kept empty.
         "openrouter_key": "",
         "anthropic_key": "",
+        # One key per OpenAI-compatible provider (OpenRouter, OpenAI,
+        # Ollama (local), Custom), so switching provider never sends one
+        # provider's key to another provider's server.
+        "provider_keys": {},
     },
     "last_settings": {
         "model": "large-v3",
@@ -107,6 +113,27 @@ class ConfigManager:
                         self._data[section].update(saved[section])
             except (json.JSONDecodeError, UnicodeDecodeError, OSError):
                 pass  # corrupt file, use defaults
+        self._migrate_provider_keys()
+
+    def _migrate_provider_keys(self):
+        """Move the old shared API key to the provider it was used with.
+
+        Before per-provider keys, one "openrouter_key" served OpenRouter,
+        OpenAI, Ollama and Custom alike. It goes to the provider selected
+        now (OpenRouter if Anthropic is selected, since Anthropic always had
+        its own key). Takes effect on disk with the next save.
+        """
+        creds = self._data["credentials"]
+        if not isinstance(creds.get("provider_keys"), dict):
+            creds["provider_keys"] = {}
+        legacy = (creds.get("openrouter_key") or "").strip()
+        if not legacy:
+            return
+        provider = self.get("api", "provider", "OpenRouter") or "OpenRouter"
+        if provider == "Anthropic":
+            provider = "OpenRouter"
+        creds["provider_keys"].setdefault(provider, legacy)
+        creds["openrouter_key"] = ""
 
     def save(self):
         """Persist config to disk."""
@@ -142,18 +169,44 @@ class ConfigManager:
         return dict(self._data.get(section, {}))
 
     def get_credentials(self):
-        """Return (hf_token, openrouter_key, anthropic_key) from config."""
+        """Return (hf_token, openrouter_key, anthropic_key) from config.
+
+        openrouter_key is the key saved for the OpenRouter provider only;
+        use get_provider_key() for the others.
+        """
         creds = self._data.get("credentials", {})
         return (creds.get("hf_token", ""),
-                creds.get("openrouter_key", ""),
+                self.get_provider_key("OpenRouter"),
                 creds.get("anthropic_key", ""))
 
-    def set_credentials(self, hf_token=None, openrouter_key=None, anthropic_key=None):
-        """Update credential values."""
+    def get_provider_key(self, provider):
+        """The API key saved for one LLM provider ("" if none)."""
+        if provider == "Anthropic":
+            return self._data.get("credentials", {}).get("anthropic_key", "")
+        keys = self._data.get("credentials", {}).get("provider_keys") or {}
+        return keys.get(provider, "") if isinstance(keys, dict) else ""
+
+    def get_provider_keys(self):
+        """Copy of the per-provider keys for OpenAI-compatible providers."""
+        keys = self._data.get("credentials", {}).get("provider_keys") or {}
+        return dict(keys) if isinstance(keys, dict) else {}
+
+    def set_credentials(self, hf_token=None, openrouter_key=None, anthropic_key=None,
+                        provider_keys=None):
+        """Update credential values.
+
+        openrouter_key sets the OpenRouter provider's key; provider_keys
+        replaces the keys of all OpenAI-compatible providers at once.
+        """
         if hf_token is not None:
             self.set("credentials", "hf_token", hf_token)
+        if provider_keys is not None:
+            self.set("credentials", "provider_keys",
+                     {k: v for k, v in provider_keys.items() if v})
         if openrouter_key is not None:
-            self.set("credentials", "openrouter_key", openrouter_key)
+            keys = self.get_provider_keys()
+            keys["OpenRouter"] = openrouter_key
+            self.set("credentials", "provider_keys", {k: v for k, v in keys.items() if v})
         if anthropic_key is not None:
             self.set("credentials", "anthropic_key", anthropic_key)
 

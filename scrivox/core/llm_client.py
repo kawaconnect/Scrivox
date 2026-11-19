@@ -3,6 +3,7 @@
 import json
 import time
 from typing import Optional
+from urllib.parse import urlsplit
 
 import requests
 
@@ -26,9 +27,33 @@ def is_error_response(text) -> bool:
     return text.startswith(_ERROR_PREFIXES)
 
 
+def api_hostname(api_base: str) -> str:
+    """Lower-case hostname of an API URL ("" if it has none or is invalid)."""
+    try:
+        return (urlsplit((api_base or "").strip()).hostname or "").rstrip(".")
+    except ValueError:
+        return ""
+
+
+def _host_is(host: str, domain: str) -> bool:
+    return host == domain or host.endswith("." + domain)
+
+
 def is_anthropic_api(api_base: str) -> bool:
-    """Detect if the API base URL points to Anthropic's Messages API."""
-    return "anthropic.com" in (api_base or "")
+    """Detect if the API base URL points to Anthropic's Messages API.
+
+    Compares the parsed hostname, so a URL that merely contains
+    "anthropic.com" in its path, query or another host's name (for example
+    https://anthropic.com.example.net/) is not taken for Anthropic.
+    """
+    return _host_is(api_hostname(api_base), "anthropic.com")
+
+
+def is_openrouter_api(api_base: str) -> bool:
+    """True for OpenRouter, which is also what an empty api_base means."""
+    if not (api_base or "").strip():
+        return True
+    return _host_is(api_hostname(api_base), "openrouter.ai")
 
 
 def _convert_openai_to_anthropic_messages(messages):
@@ -311,7 +336,7 @@ def _openai_completion(messages, model, api_key, api_base, max_tokens,
     # api.openai.com rejects max_tokens for current models, it was replaced
     # by max_completion_tokens. Other OpenAI-compatible backends (OpenRouter,
     # Ollama, vLLM, ...) still expect max_tokens.
-    if "api.openai.com" in (api_base or ""):
+    if api_hostname(api_base) == "api.openai.com":
         payload["max_completion_tokens"] = max_tokens
     else:
         payload["max_tokens"] = max_tokens

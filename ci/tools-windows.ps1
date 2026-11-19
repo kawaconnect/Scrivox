@@ -15,8 +15,8 @@
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# Python 3.11 to match the GitHub Actions build (.github/workflows/release.yml)
-# and the Tk 8.6 the released .exe ships. 3.11.9 is the last 3.11 release
+# Python 3.11, the version requirements.lock is generated for, with the
+# Tk 8.6 the released .exe ships. 3.11.9 is the last 3.11 release
 # python.org and NuGet publish Windows binaries for.
 $PythonVersion      = '3.11.9'
 $PythonNupkgSha256  = '9283876d58c017e0e846f95b490da3bca0fc0a6ee1134b2870677cfb7eec3c67'

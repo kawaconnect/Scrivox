@@ -271,6 +271,46 @@ class SettingsCompatTests(GuiTestCase):
         self.assertEqual(sf.get_settings_dict()["language"], "")
 
 
+class ProviderKeyTests(GuiTestCase):
+    def write_config(self, data):
+        import json
+        with open(os.path.join(self.cfg_dir, "scrivox_config.json"), "w") as f:
+            json.dump(data, f)
+
+    def test_switching_provider_never_carries_the_key_over(self):
+        self.write_config({"credentials": {"openrouter_key": "sk-shared"},
+                           "api": {"provider": "OpenAI"}})
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
+            app = self.make_app()
+        af = app.api_frame
+        if af is None:
+            self.skipTest("no API settings in this build")
+        # The old shared key went to the provider selected at upgrade time.
+        self.assertEqual(af.get_openrouter_key(), "sk-shared")
+        af.provider_var.set("Custom")
+        af._on_provider_change()
+        self.assertEqual(af.get_openrouter_key(), "")
+        af.openrouter_key_var.set("sk-custom")
+        af.provider_var.set("OpenRouter")
+        self.assertEqual(af.get_openrouter_key(), "")
+        af.provider_var.set("OpenAI")
+        self.assertEqual(af.get_openrouter_key(), "sk-shared")
+        af.save_to_config()
+        cfg = app.config_manager
+        self.assertEqual(cfg.get_provider_keys(), {"OpenAI": "sk-shared", "Custom": "sk-custom"})
+
+    def test_custom_speaker_model_shows_warning(self):
+        app = self.make_app()
+        mf = app.models_frame
+        if mf is None or not hasattr(mf, "_model_warning"):
+            self.skipTest("Lite build: no diarization")
+        self.assertEqual(mf._model_warning.cget("text"), "")
+        mf.diarization_model_var.set("someone/other-model")
+        self.assertIn("code execution", mf._model_warning.cget("text"))
+        mf.diarization_model_var.set("pyannote/speaker-diarization-community-1")
+        self.assertEqual(mf._model_warning.cget("text"), "")
+
+
 class StartButtonTests(GuiTestCase):
     def test_start_looks_unavailable_until_a_file_is_ready(self):
         self.make_app()

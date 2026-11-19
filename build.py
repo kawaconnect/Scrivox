@@ -9,6 +9,7 @@ Build variants:
 """
 
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -27,7 +28,23 @@ def get_size_mb(path):
     return total / (1024 * 1024)
 
 
-def download_diarization_models(models_dir):
+def load_constants(project_dir):
+    """scrivox/core/constants.py on its own: importing the scrivox.core
+    package would pull in torch, which build.py does not otherwise need."""
+    path = os.path.join(project_dir, "scrivox", "core", "constants.py")
+    spec = importlib.util.spec_from_file_location("_scrivox_constants", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def pinned_snapshot_dir(models_dir, model_id, revision):
+    """Where snapshot_download puts model_id@revision under models_dir."""
+    return os.path.join(models_dir, "hub", "models--" + model_id.replace("/", "--"),
+                        "snapshots", revision)
+
+
+def download_diarization_models(models_dir, model_id, revision):
     """Download pyannote diarization models into the bundled models directory.
 
     Requires HF_TOKEN environment variable to be set.
@@ -51,22 +68,20 @@ def download_diarization_models(models_dir):
     os.environ["HF_HOME"] = models_dir
     os.environ["HF_HUB_CACHE"] = hub_dir
 
-    # Model repos: community-1 is self-contained (segmentation + embedding + PLDA
-    # are bundled as subfolders), so only one repo is needed.
-    model_repos = [
-        "pyannote/speaker-diarization-community-1",  # self-contained: segmentation + embedding + plda
-    ]
-
+    # community-1 is self-contained (segmentation + embedding + PLDA are
+    # subfolders), so only one repo is needed. It is fetched at the commit
+    # pinned in scrivox/core/constants.py, which is the snapshot the app
+    # loads (with weights_only=True) at runtime.
     try:
         from huggingface_hub import snapshot_download
 
-        for repo in model_repos:
-            print(f"  Downloading {repo}...")
-            snapshot_download(
-                repo,
-                token=hf_token,
-                cache_dir=hub_dir,
-            )
+        print(f"  Downloading {model_id}@{revision}...")
+        snapshot_download(
+            model_id,
+            revision=revision,
+            token=hf_token,
+            cache_dir=hub_dir,
+        )
 
         size = get_size_mb(models_dir)
         print(f"  Models downloaded successfully ({size:.0f} MB)")
@@ -149,6 +164,9 @@ def main():
     project_dir = os.path.dirname(os.path.abspath(__file__))
     spec_file = os.path.join(project_dir, "scrivox.spec")
     models_dir = os.path.join(project_dir, "models")
+    constants = load_constants(project_dir)
+    model_id = constants.DEFAULT_DIARIZATION_MODEL
+    revision = constants.DEFAULT_DIARIZATION_REVISION
 
     if not os.path.isfile(spec_file):
         print(f"Error: {spec_file} not found", file=sys.stderr)
@@ -182,22 +200,15 @@ def main():
     # ── Full build (with models) ──
     full_explicitly_requested = args.full
     def _models_present():
-        """A valid bundle has hub/models--* inside, a bare dir doesn't count.
-
-        Mirrors scrivox/core/diarizer._get_bundled_models_dir (which can't be
-        imported here without pulling in torch), keep the two in sync.
-        """
-        hub = os.path.join(models_dir, "hub")
-        try:
-            return os.path.isdir(hub) and any(
-                e.startswith("models--") for e in os.listdir(hub))
-        except OSError:
-            return False
+        """The pinned snapshot must be there; any other revision (or a bare
+        models/ dir) does not count, the app would refuse to load it."""
+        return os.path.isfile(os.path.join(
+            pinned_snapshot_dir(models_dir, model_id, revision), "config.yaml"))
 
     if build_full:
         # Download models if not already present
         if not _models_present():
-            if not download_diarization_models(models_dir):
+            if not download_diarization_models(models_dir, model_id, revision):
                 if full_explicitly_requested:
                     print("Full build failed: model download failed.", file=sys.stderr)
                     sys.exit(1)

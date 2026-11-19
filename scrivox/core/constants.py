@@ -7,6 +7,30 @@ DEFAULT_SUMMARY_MODEL = "google/gemini-2.5-flash"
 DEFAULT_TRANSLATION_MODEL = "google/gemini-2.5-flash"
 
 DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
+# Hugging Face commit of DEFAULT_DIARIZATION_MODEL that Scrivox downloads and
+# bundles. Pinned so a changed upstream repo cannot swap the checkpoints
+# under existing installs. To move it: pick the new commit on
+# huggingface.co, check its checkpoints still load with
+# scrivox.core.torch_compat (weights_only=True, see PYANNOTE_SAFE_GLOBALS)
+# and update this value. build.py and ci/check_build.py read it from here.
+DEFAULT_DIARIZATION_REVISION = "3533c8cf8e369892e6b79ff1bf80f7b0286a54ee"
+# Older saved settings name the pyannote 3.x pipeline; the diarizer
+# replaces it with DEFAULT_DIARIZATION_MODEL.
+LEGACY_DIARIZATION_MODELS = ("pyannote/speaker-diarization-3.1",)
+
+
+def is_custom_diarization_model(model_id):
+    """True when model_id is neither empty, the default model nor a legacy
+    ID that is upgraded to it. Custom models are loaded with pickle code
+    execution allowed (see scrivox.core.torch_compat)."""
+    model_id = (model_id or "").strip()
+    return bool(model_id) and model_id != DEFAULT_DIARIZATION_MODEL \
+        and model_id not in LEGACY_DIARIZATION_MODELS
+
+
+CUSTOM_DIARIZATION_MODEL_WARNING = (
+    "Custom speaker models are loaded with code execution allowed: a malicious "
+    "model can run any program on this computer. Only use models you trust.")
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma"}

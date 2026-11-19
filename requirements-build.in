@@ -1,0 +1,4 @@
+# Build-only tools for the Windows release (not needed to run from source).
+# Locked together with requirements.txt into requirements.lock; see
+# ci/update-locks.sh.
+pyinstaller>=6.10
