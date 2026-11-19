@@ -131,7 +131,7 @@ Three variants are available:
 |---------|------|-------------|
 | **Scrivox-Lite** | ~1.6 GB (includes CUDA PyTorch) | Transcription only: no diarization, vision, summary or translation |
 | **Scrivox** (Regular) | larger than Lite | All features; diarization models download on first use with your own HuggingFace token |
-| **Scrivox-Full** | ~1.5-2 GB | All features with diarization models pre-bundled |
+| **Scrivox-Full** | largest | All features with diarization models pre-bundled |
 
 ffmpeg is not bundled: install it separately (see [Requirements](#requirements)).
 The first run with a Whisper model downloads it from Hugging Face (75 MB for
