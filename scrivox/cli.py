@@ -64,7 +64,9 @@ def build_parser():
     diarize_group.add_argument("--speaker-names", default=None,
                                help="Comma-separated speaker names, e.g. 'Alice,Bob,Charlie'")
     diarize_group.add_argument("--diarization-model", default=DEFAULT_DIARIZATION_MODEL,
-                               help=f"Diarization model ID or local path (default: {DEFAULT_DIARIZATION_MODEL})")
+                               help=f"Diarization model ID or local path (default: {DEFAULT_DIARIZATION_MODEL}, "
+                                    "pinned to a known revision). Any other model is loaded with "
+                                    "code execution allowed: only use models you trust.")
 
     # Feature negations: turn OFF a feature that --use-config or --all enabled.
     parser.add_argument("--no-diarize", action="store_true",
@@ -261,25 +263,48 @@ def _apply_config_credentials(args):
     from .core.constants import LLM_PROVIDERS
 
     cfg = ConfigManager()
-    hf_token, openrouter_key, anthropic_key = cfg.get_credentials()
+    hf_token, _, anthropic_key = cfg.get_credentials()
     provider = cfg.get("api", "provider", "") or ""
     custom_base = (cfg.get("api", "custom_base", "") or "").strip()
 
     if hf_token and not args.hf_token:
         args.hf_token = hf_token
-    if not (args.api_key or args.openrouter_key or args.anthropic_key):
-        if provider == "Anthropic" and anthropic_key:
-            args.anthropic_key = anthropic_key
-        elif openrouter_key:
-            args.api_key = openrouter_key
+    explicit_key = bool(args.api_key or args.openrouter_key or args.anthropic_key)
+    if not explicit_key and not args.api_base and provider == "Anthropic" and anthropic_key:
+        # The Anthropic key implies the Anthropic base later.
+        args.anthropic_key = anthropic_key
+        return
     if not args.api_base and not args.anthropic_key:
-        # An Anthropic key (explicit or saved) implies its own base later;
-        # OpenRouter is the built-in default, so neither needs steering here.
+        # OpenRouter is the built-in default and needs no steering.
         if provider == "Custom" and custom_base:
             args.api_base = custom_base
         elif provider in LLM_PROVIDERS \
                 and provider not in ("OpenRouter", "Anthropic"):
             args.api_base = LLM_PROVIDERS[provider]
+    if explicit_key:
+        return
+    # Each provider has its own saved key: use the one saved for the
+    # server this run talks to, never another provider's key.
+    base = args.api_base or LLM_PROVIDERS["OpenRouter"]
+    key_provider = _provider_for_base(base, custom_base)
+    if key_provider:
+        args.api_key = cfg.get_provider_key(key_provider) or None
+
+
+def _provider_for_base(api_base, custom_base=""):
+    """The GUI provider whose saved key belongs to api_base, or None."""
+    from .core.constants import LLM_PROVIDERS
+    from .core.llm_client import is_anthropic_api
+
+    base = (api_base or "").strip().rstrip("/")
+    if is_anthropic_api(base):
+        return "Anthropic"
+    for name, url in LLM_PROVIDERS.items():
+        if base == url.rstrip("/"):
+            return name
+    if custom_base and base == custom_base.strip().rstrip("/"):
+        return "Custom"
+    return None
 
 
 def run_cli(argv=None):

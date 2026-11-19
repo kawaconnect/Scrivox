@@ -17,7 +17,7 @@ from .constants import (
     LANGUAGE_CODE_TO_NAME, TRANSLATION_CODE_TO_NAME,
     VIDEO_EXTENSIONS,
 )
-from .llm_client import is_anthropic_api
+from .llm_client import is_anthropic_api, is_openrouter_api
 from .media import check_ffmpeg, extract_wav, get_media_duration, has_video_stream
 from .transcriber import clean_transcription, transcribe_audio
 from .diarizer import assign_speakers, diarize_audio, rename_speakers, _get_bundled_models_dir
@@ -209,7 +209,9 @@ class TranscriptionPipeline:
 
         # Resolve credentials
         hf_token = cfg.hf_token or os.environ.get("HF_TOKEN")
-        openrouter_key = cfg.openrouter_key or os.environ.get("OPENROUTER_API_KEY")
+        # OPENROUTER_API_KEY is an OpenRouter key: never send it to another server.
+        openrouter_key = cfg.openrouter_key or (
+            os.environ.get("OPENROUTER_API_KEY") if is_openrouter_api(cfg.api_base) else None)
 
         if cfg.diarize and not hf_token:
             # huggingface_hub 1.x removed HfFolder; get_token() works on 0.21+

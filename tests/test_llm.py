@@ -165,6 +165,38 @@ class ChatCompletionTests(unittest.TestCase):
         self.assertNotIn("max_tokens", payload)
 
 
+class EndpointDetectionTests(unittest.TestCase):
+    def test_anthropic_is_matched_by_hostname(self):
+        for url in ("https://api.anthropic.com/v1/messages",
+                    "https://API.Anthropic.com./v1/messages",
+                    "https://anthropic.com/v1/messages"):
+            self.assertTrue(llm_client.is_anthropic_api(url), url)
+
+    def test_anthropic_in_path_or_other_host_is_not_anthropic(self):
+        for url in ("https://example.net/anthropic.com/v1/messages",
+                    "https://anthropic.com.example.net/v1/messages",
+                    "https://example.net/v1?u=api.anthropic.com",
+                    "https://notanthropic.com/v1/messages",
+                    "https://user@example.net:anthropic.com",
+                    "", None, "not a url"):
+            self.assertFalse(llm_client.is_anthropic_api(url), url)
+
+    def test_openrouter_detection(self):
+        self.assertTrue(llm_client.is_openrouter_api(None))
+        self.assertTrue(llm_client.is_openrouter_api("https://openrouter.ai/api/v1/chat/completions"))
+        self.assertFalse(llm_client.is_openrouter_api("https://example.net/openrouter.ai/v1"))
+        self.assertFalse(llm_client.is_openrouter_api("https://api.openai.com/v1/chat/completions"))
+
+    @mock.patch.object(llm_client.time, "sleep")
+    def test_openai_in_path_keeps_max_tokens(self, _sleep):
+        with mock.patch.object(llm_client.requests, "post",
+                               return_value=_openai_ok("ok")) as post:
+            chat_completion([{"role": "user", "content": "x"}], "m", "k",
+                            "https://proxy.example.net/api.openai.com/v1/chat/completions",
+                            max_tokens=5)
+        self.assertEqual(post.call_args.kwargs["json"]["max_tokens"], 5)
+
+
 class ErrorSentinelTests(unittest.TestCase):
     def test_content_starting_with_bracket_is_not_an_error(self):
         self.assertFalse(is_error_response("[Music] intro"))

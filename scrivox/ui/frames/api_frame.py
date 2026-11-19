@@ -27,10 +27,19 @@ class ApiFrame(ttk.Frame):
         self.anthropic_key_var = tk.StringVar()
         self.provider_var = tk.StringVar(value=DEFAULT_LLM_PROVIDER)
         self.custom_base_var = tk.StringVar()
+        # openrouter_key_var is the visible key field of the OpenAI-compatible
+        # providers. It always shows the key of the selected provider; the
+        # others are kept here, so switching provider never carries a key
+        # over to another provider's server.
+        self._provider_keys = {}
+        self._key_provider = DEFAULT_LLM_PROVIDER
         self._show_keys = False
         self._has_bundled = _get_bundled_models_dir() is not None
 
         self._build()
+        # However the provider changes, the key field follows it.
+        self.provider_var.trace_add(
+            "write", lambda *_: self._swap_key_field(self.provider_var.get()))
         self._load_from_config()
 
     def _build(self):
@@ -120,8 +129,23 @@ class ApiFrame(ttk.Frame):
         "Custom": "Any OpenAI-compatible server. A key is needed unless the URL is local.",
     }
 
+    def _stash_key(self):
+        """Remember the visible key under the provider it was entered for."""
+        if self._key_provider != "Anthropic":
+            self._provider_keys[self._key_provider] = self.openrouter_key_var.get().strip()
+
+    def _swap_key_field(self, provider):
+        """Show the selected provider's own key in the shared key field."""
+        if provider == self._key_provider:
+            return
+        self._stash_key()
+        self._key_provider = provider
+        if provider != "Anthropic":
+            self.openrouter_key_var.set(self._provider_keys.get(provider, ""))
+
     def _on_provider_change(self, event=None):
         provider = self.provider_var.get()
+        self._swap_key_field(provider)
 
         # Show/hide Anthropic key vs standard API key
         if provider == "Anthropic":
@@ -149,27 +173,31 @@ class ApiFrame(ttk.Frame):
     def _load_from_config(self):
         """Load keys from config, falling back to env vars."""
         hf = ""
-        or_key = ""
         ant_key = ""
+        keys = {}
         if self.config_manager:
-            hf, or_key, ant_key = self.config_manager.get_credentials()
+            hf, _, ant_key = self.config_manager.get_credentials()
+            keys = self.config_manager.get_provider_keys()
         if not hf:
             hf = os.environ.get("HF_TOKEN", "")
-        if not or_key:
-            or_key = os.environ.get("OPENROUTER_API_KEY", "")
+        # The .env keys belong to their own providers only.
+        if not keys.get("OpenRouter"):
+            keys["OpenRouter"] = os.environ.get("OPENROUTER_API_KEY", "")
         if not ant_key:
             ant_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self.hf_token_var.set(hf)
-        self.openrouter_key_var.set(or_key)
         self.anthropic_key_var.set(ant_key)
 
-        # Load provider setting
+        provider = DEFAULT_LLM_PROVIDER
         if self.config_manager:
             provider = self.config_manager.get("api", "provider", DEFAULT_LLM_PROVIDER)
-            self.provider_var.set(provider)
-            custom_base = self.config_manager.get("api", "custom_base", "")
-            self.custom_base_var.set(custom_base)
-            self._on_provider_change()
+            self.custom_base_var.set(self.config_manager.get("api", "custom_base", ""))
+        self._provider_keys = keys
+        # Fill the field for the provider being shown before switching to it.
+        self._key_provider = DEFAULT_LLM_PROVIDER
+        self.openrouter_key_var.set(keys.get(DEFAULT_LLM_PROVIDER, ""))
+        self.provider_var.set(provider)
+        self._on_provider_change()
 
     def _toggle_show(self):
         self._show_keys = not self._show_keys
@@ -296,9 +324,10 @@ class ApiFrame(ttk.Frame):
     def save_to_config(self):
         """Save current keys and provider to config manager."""
         if self.config_manager:
+            self._stash_key()
             self.config_manager.set_credentials(
                 hf_token=self.hf_token_var.get().strip(),
-                openrouter_key=self.openrouter_key_var.get().strip(),
+                provider_keys=dict(self._provider_keys),
                 anthropic_key=self.anthropic_key_var.get().strip(),
             )
             self.config_manager.set("api", "provider", self.provider_var.get())
