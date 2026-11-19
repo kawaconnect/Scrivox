@@ -129,8 +129,8 @@ Three variants are available:
 
 | Variant | Size | Description |
 |---------|------|-------------|
-| **Scrivox-Lite** | ~200-300 MB | Transcription only: no diarization, vision, summary or translation |
-| **Scrivox** (Regular) | ~500-800 MB | All features; diarization models download on first use with your own HuggingFace token |
+| **Scrivox-Lite** | ~1.6 GB (includes CUDA PyTorch) | Transcription only: no diarization, vision, summary or translation |
+| **Scrivox** (Regular) | larger than Lite | All features; diarization models download on first use with your own HuggingFace token |
 | **Scrivox-Full** | ~1.5-2 GB | All features with diarization models pre-bundled |
 
 ffmpeg is not bundled: install it separately (see [Requirements](#requirements)).
