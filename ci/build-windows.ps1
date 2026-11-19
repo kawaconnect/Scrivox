@@ -5,11 +5,10 @@
 #
 #   .\ci\build-windows.ps1 -Variant Lite|Regular|Full
 #
-# Mirrors the steps of the old GitHub Actions workflow
-# (.github/workflows/release.yml): CUDA 12.6 torch, requirements, forced
-# CUDA torch reinstall, CUDA DLL check, build.py --clean --<variant>, 7z of
-# the dist dir (dotfiles included), ISCC. Output lands in out\ with the same
-# file names the GitHub releases used.
+# Steps: locked CUDA 12.6 torch, locked requirements (+ PyInstaller), CUDA
+# DLL check, build.py --clean --<variant>, 7z of the dist dir (dotfiles
+# included), ISCC. Output lands in out\ with the same file names as earlier
+# releases.
 param(
   [Parameter(Mandatory = $true)][ValidateSet('Lite', 'Regular', 'Full')][string]$Variant
 )
@@ -35,11 +34,14 @@ $py = Join-Path $root '.venv-ci\Scripts\python.exe'
 # folder (from tcltk.msi). Check that here, before the ~2.5 GB CUDA torch
 # install and the PyInstaller run, not only in the bundle check at the end.
 Invoke-Checked 'venv tkinter' { & $py -c "import tkinter; tkinter.Tcl(); print('venv Tk', tkinter.TkVersion)" }
-$cudaIndex = 'https://download.pytorch.org/whl/cu126'
-Invoke-Checked 'pip install CUDA torch' { & $py -m pip install -q torch torchaudio --index-url $cudaIndex }
-Invoke-Checked 'pip install requirements' { & $py -m pip install -q -r requirements.txt pyinstaller }
-# Transitive dependencies can pull the CPU torch from PyPI over the CUDA one.
-Invoke-Checked 'pip force CUDA torch' { & $py -m pip install -q torch torchaudio --index-url $cudaIndex --force-reinstall --no-deps }
+# Exact, hash-checked versions from the lock files (regenerate them with
+# ci/update-locks.sh). The CUDA torch lock goes first, without its
+# dependencies (requirements.lock has them, from PyPI). requirements.lock
+# leaves torch/torchaudio out, so nothing can swap in PyPI's CPU torch, and
+# --require-hashes refuses any package or file that is not in the locks.
+Invoke-Checked 'pip install CUDA torch (locked)' { & $py -m pip install -q --require-hashes --no-deps -r requirements-torch-cu126.lock }
+Invoke-Checked 'pip install requirements (locked)' { & $py -m pip install -q --require-hashes -r requirements.lock }
+Invoke-Checked 'pip check' { & $py -m pip check }
 Invoke-Checked 'CUDA torch check' { & $py ci\check_build.py torch }
 # The Windows-path helpers only take their Windows branches on Windows; the
 # Linux test job can only run their no-op side.
@@ -71,8 +73,8 @@ Copy-Item $setup $out -Force
 
 # GitHub release assets must be under 2 GiB, and gitlab-release-mirror copies
 # Scrivox's GitLab releases to GitHub, so that is the limit that binds (this
-# GitLab instance sets no generic package file size limit). As in the old
-# workflow (.github/check_asset_size.ps1), an oversized installer does not
+# GitLab instance sets no generic package file size limit). An oversized
+# installer does not
 # fail the variant: it is moved aside to out\oversize\ (kept, not deleted),
 # left out of SHA256SUMS and therefore not published, and the .7z portable
 # still ships. An oversized .7z would leave the variant with nothing to

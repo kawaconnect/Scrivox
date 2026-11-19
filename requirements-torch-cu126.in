@@ -1,0 +1,6 @@
+# CUDA 12.6 builds of PyTorch for the Windows release, locked into
+# requirements-torch-cu126.lock from https://download.pytorch.org/whl/cu126
+# (see ci/update-locks.sh). Kept apart from requirements.lock because that
+# index only carries old copies of most PyPI packages.
+torch
+torchaudio
