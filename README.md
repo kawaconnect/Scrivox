@@ -4,7 +4,7 @@ GPU-accelerated transcription suite with speaker diarization, LLM translation, S
 
 ---
 
-![Scrivox GUI](assets/screenshot.png)
+![Scrivox main window after a run: one file done, speaker identification and summary turned on, and the transcript with its summary on the right](docs/images/main-window.png)
 
 ## Features
 

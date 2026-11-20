@@ -6,6 +6,10 @@ About dialog show.
 
 ## [Unreleased]
 
+### Docs
+
+- README: the screenshot now shows the current window (it was from v1.5.2) and uses example data; moved to `docs/images/`.
+
 ### Security
 - ffmpeg and ffprobe are now looked up next to `Scrivox.exe` and in the PATH
   folders only. Windows searched the current directory first for a bare
